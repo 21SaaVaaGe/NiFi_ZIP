@@ -1,0 +1,41 @@
+import groovy.json.JsonSlurper
+import java.util.zip.ZipOutputStream
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.io.OutputStream
+import org.apache.nifi.processor.io.OutputStreamCallback
+import org.apache.nifi.processor.io.InputStreamCallback
+import com.amazonaws.services.s3.AmazonS3Client
+import com.amazonaws.services.s3.model.S3Object
+import com.amazonaws.services.s3.model.S3ObjectInputStream
+
+
+def jsonFile = new File('files.json')
+def jsonSlurper = new JsonSlurper()
+def filesJson = jsonSlurper.parse(jsonFile)
+
+def s3Client = new AmazonS3Client()
+
+def zipOutputStream = new ZipOutputStream(new ByteArrayOutputStream())
+
+filesJson.each { file ->
+      def s3Object = s3Client.getObject(file.bucket, file.key)
+    def s3ObjectInputStream = new S3ObjectInputStream(s3Object.getObjectContent())
+    
+  def zipEntry = new ZipEntry(file.filename)
+    zipOutputStream.putNextEntry(zipEntry)
+    IOUtils.copy(s3ObjectInputStream, zipOutputStream)
+    s3ObjectInputStream.close()
+    zipOutputStream.closeEntry()
+}
+zipOutputStream.close()
+
+def outputStreamCallback = new OutputStreamCallback() {
+    @Override
+    void process(OutputStream outputStream) throws IOException {
+        outputStream.write(zipOutputStream.toByteArray())
+    }
+}
+
+session.write(outputStreamCallback)
+session.transfer(session.create(), REL_SUCCESS)
